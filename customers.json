@@ -1,0 +1,32 @@
+[
+  {
+    "customer_id": "C-001",
+    "first_name": "Lena",
+    "last_name": "Hoffmann",
+    "email": "lena.hoffmann@example.com",
+    "language": "de",
+    "plan": "enterprise",
+    "products": ["ScoutVac S1", "ScoutMow M2"],
+    "customer_since": "2021-03-15"
+  },
+  {
+    "customer_id": "C-002",
+    "first_name": "James",
+    "last_name": "Carter",
+    "email": "james.carter@example.com",
+    "language": "en",
+    "plan": "basic",
+    "products": ["ScoutVac S1"],
+    "customer_since": "2025-09-02"
+  },
+  {
+    "customer_id": "C-003",
+    "first_name": "Camille",
+    "last_name": "Dubois",
+    "email": "camille.dubois@example.com",
+    "language": "fr",
+    "plan": "premium",
+    "products": ["ScoutArm A3"],
+    "customer_since": "2023-11-20"
+  }
+]

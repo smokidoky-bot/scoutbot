@@ -13,8 +13,11 @@ def main() -> None:                                          # Hauptprogramm
     tickets = json.loads(Path(args.tickets_file).read_text(encoding="utf-8"))  # JSON-Datei lesen → Liste mit Tickets
 
     for ticket in tickets:                                   # jedes Ticket nacheinander
-        result = triage(ticket["text"])                      # Text an Claude → geprüftes Ergebnis
-        print(f"{ticket['id']}: {result.category} | {result.priority} | {result.suggested_owner}")  # ID + Ergebnis ausgeben
+        result = triage(ticket["text"], ticket.get("customer_id"))   # ⭐ Text UND Kundennummer an den Agenten
+        print(f"{ticket['id']}: {result.category} | {result.priority} | {result.suggested_owner}")  # Einordnung ausgeben
+        print(f"   Reply: {result.draft_reply}")             # ⭐ Antwortentwurf ausgeben
+        print("---")                                         # ⭐ Trennlinie zwischen den Tickets
+
 
 
 if __name__ == "__main__":                                   # nur beim direkten Start ausführen
