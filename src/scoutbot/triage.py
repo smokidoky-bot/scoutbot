@@ -1,34 +1,57 @@
-from anthropic import Anthropic                              # Verbindung zu Claude
+from anthropic import Anthropic, beta_tool                   # Verbindung zu Claude + Werkzeug-Stempel
 from dotenv import load_dotenv                               # liest die .env-Datei
 
-from scoutbot.models import TriageResult                     # unser Formular aus Schritt 4
+from scoutbot.customers import lookup_customer               # Werkzeug 1: Kunde nachschlagen (Schritt 4)
+from scoutbot.models import TriageResult                     # Ergebnis-Formular
 
-load_dotenv()                                                # ANTHROPIC_API_KEY aus .env laden (nicht mehr im Code!)
+load_dotenv()                                                # ANTHROPIC_API_KEY aus .env laden
 
-MODEL = "claude-haiku-4-5"                                   # günstiges, gutes Modell (wie bei Jonas)
+MODEL = "claude-haiku-4-5"                                   # günstiges, gutes Modell
 
-SYSTEM_PROMPT = (                                            # Rolle und Aufgabe getrennt vom Ticket (Checkliste: system + user trennen)
-    "You are a support ticket triage assistant for Anchorpoint. "
-    "Classify the customer's ticket with the triage_ticket tool."
+SYSTEM_PROMPT = (                                            # Etappe 1: Anweisung an Claude
+    "You are a support ticket triage assistant for Anchorpoint, a robotics company. "
+    "If the ticket has a customer ID, look up the customer first with lookup_customer. "
+    "Use the customer's plan and products to set the priority and the team. "
+    "Then call submit_triage exactly once with the category, priority, suggested owner "
+    "and a short draft reply in the customer's language."
 )
 
-TRIAGE_TOOL = {                                              # das Werkzeug, das Claude „aufrufen“ soll
-    "name": "triage_ticket",                                 # Name des Werkzeugs
-    "description": "Record the category, priority and responsible team of a support ticket.",  # wofür es da ist
-    "strict": True,                                          # Leitplanken an: Antwort MUSS zum Schema passen
-    "input_schema": TriageResult.model_json_schema(),        # das Formular als Bauplan
-}
 
+def triage(ticket_text: str, customer_id: str | None = None) -> TriageResult:   # Ticket-Text + Kundennummer (darf fehlen) rein → Ergebnis raus
+    results = []                                             # hier landet das abgegebene Ergebnis
 
-def triage(ticket_text: str) -> TriageResult:                # Funktion: Ticket-Text rein → geprüftes Ergebnis raus
-    client = Anthropic()                                     # Verbindung erst hier aufbauen (gut für Tests später)
-    response = client.messages.create(                       # Anfrage an Claude
+    @beta_tool                                               # Etappe 2: Werkzeug „Ergebnis abgeben“
+    def submit_triage(category: str, priority: str, suggested_owner: str, draft_reply: str) -> str:
+        """Submit the final triage result for the ticket.
+
+        Args:
+            category: One of billing, technical, account, other
+            priority: One of low, medium, high
+            suggested_owner: One of billing-team, tech-support, account-team, general-support
+            draft_reply: A short, friendly reply to the customer
+        """                                                  # Gebrauchsanweisung für Claude, inkl. erlaubter Werte
+        result = TriageResult(                               # Werte ins Formular stecken → falscher Wert = Fehler → Claude probiert neu
+            category=category,
+            priority=priority,
+            suggested_owner=suggested_owner,
+            draft_reply=draft_reply,
+        )
+        results.append(result)                               # gültiges Ergebnis merken
+        return "Triage result saved."                        # Rückmeldung an Claude
+
+    user_message = f"Customer ID: {customer_id or 'unknown'}\n\nTicket: {ticket_text}"   # Kundennummer (oder „unknown“) + Ticket
+
+    client = Anthropic()                                     # Verbindung zu Claude
+    runner = client.beta.messages.tool_runner(               # Etappe 3: Tool Runner = die Agenten-Schleife
         model=MODEL,
         max_tokens=1024,
-        system=SYSTEM_PROMPT,                                # Rolle und Regeln
-        messages=[{"role": "user", "content": ticket_text}], # nur das Ticket als user-Nachricht
-        tools=[TRIAGE_TOOL],                                 # erlaubtes Werkzeug
-        tool_choice={"type": "tool", "name": "triage_ticket"},  # Claude MUSS genau dieses Werkzeug benutzen
+        max_iterations=5,                                    # höchstens 5 Runden (Schutz vor Endlosschleife)
+        system=SYSTEM_PROMPT,                                # Anweisung
+        tools=[lookup_customer, submit_triage],              # beide Werkzeuge
+        messages=[{"role": "user", "content": user_message}],
     )
-    tool_use = next(block for block in response.content if block.type == "tool_use")  # den Tool-Aufruf aus der Antwort heraussuchen
-    return TriageResult.model_validate(tool_use.input)       # Argumente ins Formular füllen und prüfen
+    runner.until_done()                                      # Schleife laufen lassen, bis Claude fertig ist
+
+    if not results:                                          # Etappe 4: hat Claude etwas abgegeben?
+        raise RuntimeError("The agent did not submit a triage result.")   # nein → klarer Fehler statt Raten
+    return results[-1]                                       # ja → das (letzte) gültige Ergebnis zurückgeben
